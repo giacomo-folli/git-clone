@@ -1,9 +1,15 @@
 import java.io.BufferedReader;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.zip.InflaterInputStream;
 
 public class Main {
@@ -45,6 +51,33 @@ public class Main {
         catch (IOException e) {
           throw new RuntimeException(e);
         }
+      }
+      case "hash-object" -> {
+        String fileName = args[1];
+        File file = new File("./" + fileName);
+
+        byte[] bytes = {};
+
+        try {
+          FileInputStream inputStream = new FileInputStream(file);
+          bytes = inputStream.readAllBytes();
+
+          inputStream.close();
+        }
+        catch (IOException e) {
+          e.printStackTrace();
+        }
+
+        try {
+          MessageDigest digest = MessageDigest.getInstance("SHA-1");
+          byte[] hash = digest.digest(bytes);
+          String encoded = Base64.getEncoder().encodeToString(hash);
+          System.out.println(encoded);
+        }
+        catch (NoSuchAlgorithmException e) {
+          throw new RuntimeException(e);
+        }
+
       }
       default -> System.out.println("Unknown command: " + command);
     }
