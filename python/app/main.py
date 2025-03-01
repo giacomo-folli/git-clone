@@ -46,7 +46,20 @@ class Cli:
         ls_tree_parser = subparsers.add_parser(
             "ls-tree", help="List the contents of a tree object"
         )
+        ls_tree_parser.add_argument(
+            "--name-only",
+            action="store_true",
+            help="Print only the names of the tree contents",
+        )
+
         ls_tree_parser.set_defaults(func=self.ls_tree)
+
+        # write-tree command
+        write_tree_parser = subparsers.add_parser(
+            "write-tree",
+            help="Creates a tree object from the current state of the staging area",
+        )
+        write_tree_parser.set_defaults(func=self.write_tree)
 
     def mkdir_if_not_exists(self, path):
         if not os.path.exists(path):
@@ -83,23 +96,30 @@ class Cli:
     def hash_object(self, args):
         fName = args.file
 
+        obj_type = "blob"
+
         with open(fName, "rb") as file:
             bytes = file.read()
 
-        header = f"blob {len(bytes)}\x00"
-        store = header.encode("ascii") + bytes
-        hash = hashlib.sha1(store).hexdigest()
+        header = "{} {}".format(obj_type, len(bytes)).encode()
+        full_data = header + b"\x00" + bytes
+        hash = hashlib.sha1(full_data).hexdigest()
 
         if self.sbam_already_initialized():
             new_dir = os.path.join(os.getcwd(), self.objects_dir, hash[:2])
-
             self.mkdir_if_not_exists(new_dir)
+
             with open(os.path.join(new_dir, hash[2:]), "wb") as file:
-                file.write(zlib.compress(store))
+                file.write(zlib.compress(full_data))
 
         print(hash)
 
     def ls_tree(self, args):
+        if args.name_only:
+            print("Only names!")
+        print("To implement")
+
+    def write_tree(self, args):
         print("To implement")
 
     def run(self):
