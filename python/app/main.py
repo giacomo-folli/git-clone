@@ -5,7 +5,7 @@ import zlib
 
 
 class Cli:
-    main_dir = ".sbam"
+    main_dir = ".git"
     objects_dir = os.path.join(main_dir, "objects")
     refs_dir = os.path.join(main_dir, "refs")
     head_file = os.path.join(main_dir, "HEAD")
@@ -51,7 +51,7 @@ class Cli:
             action="store_true",
             help="Print only the names of the tree contents",
         )
-
+        ls_tree_parser.add_argument("hash", help="The hash in the git objects")
         ls_tree_parser.set_defaults(func=self.ls_tree)
 
         # write-tree command
@@ -115,9 +115,18 @@ class Cli:
         print(hash)
 
     def ls_tree(self, args):
-        if args.name_only:
-            print("Only names!")
-        print("To implement")
+        hash = args.hash
+        dir = hash[:2]
+        file = hash[2:]
+
+        with open(os.path.join(self.objects_dir, dir, file), "rb") as file:
+            decomp = zlib.decompress(file.read())
+
+        start = decomp.find(b"\x00")
+        parsed = decomp[start + 1 :]
+
+        decoded = parsed.strip(b"\n\r").decode("UTF-8")
+        print(decoded)
 
     def write_tree(self, args):
         print("To implement")
