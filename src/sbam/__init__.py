@@ -3,6 +3,8 @@ import struct, zlib
 
 from . import utils, cli
 
+Paths = utils.Paths
+
 # Data for one entry in the git index (.git/index)
 IndexEntry = collections.namedtuple(
     "IndexEntry",
@@ -24,46 +26,50 @@ IndexEntry = collections.namedtuple(
 )
 
 
-class Service:
-    MAIN_DIR = ".sbam"
-    OBJECTS_DIR = os.path.join(MAIN_DIR, "objects")
-    REFS_DIR = os.path.join(MAIN_DIR, "refs")
-    HEAD_FILE = os.path.join(MAIN_DIR, "HEAD")
+class SbamService:
+    """Service for repository operations such as init, object lookup,
+    status checks, and tree/index inspection.
 
-    def mkdir_if_not_exists(self, path):
-        if not os.path.exists(path):
-            os.mkdir(path)
+    This class provides the core Git-like behaviors used by the sbam CLI:
+    creating the repository layout, hashing and storing objects, reading index
+    metadata, and reporting working tree changes.
+    """
 
-    def sbam_already_initialized(self) -> bool:
-        return os.path.exists(self.MAIN_DIR)
+    def init(self):
+        """Initialize the sbam repository layout in the current directory.
 
-    def init(self, args):
-        if os.path.exists(self.MAIN_DIR):
-            print(f"A {self.MAIN_DIR} directory already exists!")
+        Creates the main repository directory, object store, refs directory,
+        and the HEAD file pointing to the default main branch when the
+        repository has not already been initialized.
+        """
+
+        if os.path.exists(Paths.MAIN_DIR.value):
+            print(f"A {Paths.MAIN_DIR.value} directory already exists!")
             return
 
-        self.mkdir_if_not_exists(self.MAIN_DIR)
-        self.mkdir_if_not_exists(self.OBJECTS_DIR)
-        self.mkdir_if_not_exists(self.REFS_DIR)
+        utils.mkdir_if_not_exists(Paths.MAIN_DIR.value)
+        utils.mkdir_if_not_exists(Paths.OBJECTS_DIR.value)
+        utils.mkdir_if_not_exists(Paths.REFS_DIR.value)
 
-        with open(self.HEAD_FILE, "w") as temp_file:
+        with open(Paths.HEAD_FILE.value, "w") as temp_file:
             temp_file.write("ref: refs/heads/main\n")
-
-        if args.crazy:
-            print("What are you crazy! flag is set!")
 
         print("Initialized sbam directory")
 
-    def cat_file(self, args):
-        sha1 = args.hash
-        target_file = os.path.join(self.OBJECTS_DIR, sha1[:2], sha1[2:])
+    def cat_file(self, sha1):
+        """Read and decode an object from the object database.
+
+        The provided SHA-1 identifies a stored Git object in the repository's
+        object store. The object file is decompressed, the Git header is
+        discarded, and the remaining payload is returned as UTF-8 text.
+        """
+        target_file = os.path.join(Paths.OBJECTS_DIR.value, sha1[:2], sha1[2:])
 
         data = utils.read_file(target_file)
         decomp = zlib.decompress(data)
 
         start = decomp.find(b"\x00")
-        parsed = decomp[start + 1 :].strip(b"\n").decode("utf-8")
-        print(parsed)
+        return decomp[start + 1 :].strip(b"\n").decode("utf-8")
 
     def hash_object(self, data, obj_type="blob", write=True):
         """
@@ -76,7 +82,12 @@ class Service:
         sha1 = hashlib.sha1(full_data).hexdigest()
 
         if write:
-            path = os.path.join(self.MAIN_DIR, self.OBJECTS_DIR, sha1[:2], sha1[2:])
+            path = os.path.join(
+                Paths.MAIN_DIR.value,
+                Paths.OBJECTS_DIR.value,
+                sha1[:2],
+                sha1[2:],
+            )
 
             if not os.path.exists(path):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -84,9 +95,15 @@ class Service:
 
         return sha1
 
-    def ls_tree(self, args):
-        sha1 = args.hash
-        target_file = os.path.join(self.OBJECTS_DIR, sha1[:2], sha1[2:])
+    def ls_tree(self, sha1):
+        """Return the raw contents of a tree object identified by sha1.
+
+        The object is read from the object database, decompressed, and the
+        Git object header is skipped to expose the tree payload. This is
+        intended for inspecting tree entries stored in the repository.
+        """
+
+        target_file = os.path.join(Paths.OBJECTS_DIR.value, sha1[:2], sha1[2:])
 
         data = utils.read_file(target_file)
         decomp = zlib.decompress(data)
@@ -94,17 +111,13 @@ class Service:
         start = decomp.find(b"\x00")
         parsed = decomp[start + 1 :]
 
-        decoded = parsed.strip(b"\n\r").decode("UTF-8")
-        print(decoded)
-
-    def write_tree(self, args):
-        print("To implement")
+        return parsed.strip(b"\n\r").decode("UTF-8")
 
     def read_index(self):
         """Read git index file and return list of IndexEntry objects."""
 
         try:
-            data = utils.read_file(os.path.join(self.MAIN_DIR, "index"))
+            data = utils.read_file(os.path.join(Paths.MAIN_DIR.value, "index"))
         except FileNotFoundError:
             return []
 
@@ -136,9 +149,7 @@ class Service:
         return entries
 
     def get_status(self):
-        """
-        Get status of working copy, return tuple of (changed_paths, new_paths, deleted_paths).
-        """
+        """Get status of working copy, return tuple of (changed_paths, new_paths, deleted_paths)."""
         paths = set()
 
         for root, dirs, files in os.walk("."):
@@ -178,19 +189,20 @@ class Service:
                 print("   ", path)
 
     def run(self, args):
+        """Dispatch the parsed command to its corresponding service method."""
         match args.command:
             case "init":
-                self.init(args)
+                self.init()
             case "cat-file":
-                self.cat_file(args)
+                file = self.cat_file(args)
+                print(file)
             case "hash-object":
                 data = utils.read_file(args.file)
                 sha1 = self.hash_object(data, args.type, write=args.write)
                 print(sha1)
             case "ls-tree":
-                self.ls_tree(args)
-            case "write-tree":
-                self.write_tree(args)
+                tree = self.ls_tree(args)
+                print(tree)
             case "status":
                 self.status()
             case _:
@@ -201,5 +213,5 @@ def main() -> None:
     clid = cli.Cli()
     args = clid.parser.parse_args()
 
-    sbam = Service()
+    sbam = SbamService()
     sbam.run(args)
