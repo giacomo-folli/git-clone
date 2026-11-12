@@ -1,65 +1,34 @@
-import argparse
-import hashlib
-import os
-import zlib
+import argparse, collections, hashlib, os
+import struct, zlib
+
+from . import utils, cli
+
+# Data for one entry in the git index (.git/index)
+IndexEntry = collections.namedtuple(
+    "IndexEntry",
+    [
+        "ctime_s",
+        "ctime_n",
+        "mtime_s",
+        "mtime_n",
+        "dev",
+        "ino",
+        "mode",
+        "uid",
+        "gid",
+        "size",
+        "sha1",
+        "flags",
+        "path",
+    ],
+)
 
 
-class Cli:
+class Service:
     MAIN_DIR = ".sbam"
     OBJECTS_DIR = os.path.join(MAIN_DIR, "objects")
     REFS_DIR = os.path.join(MAIN_DIR, "refs")
     HEAD_FILE = os.path.join(MAIN_DIR, "HEAD")
-
-    def __init__(self):
-        self.parser = argparse.ArgumentParser(
-            description="sbam: a simple git-like version control system"
-        )
-        subparsers = self.parser.add_subparsers(dest="command", required=True)
-
-        # init command
-        init_parser = subparsers.add_parser(
-            "init", help="Initialize a new sbam repository"
-        )
-        init_parser.add_argument(
-            "-c",
-            "--crazy",
-            action="store_true",
-            help="Additional flag for init command",
-        )
-        init_parser.set_defaults(func=self.init)
-
-        # cat-file command
-        cat_file_parser = subparsers.add_parser(
-            "cat-file", help="Print the contents of a specified file"
-        )
-        cat_file_parser.add_argument("hash", help="The hash of the file to print")
-        cat_file_parser.set_defaults(func=self.cat_file)
-
-        # hash-object command
-        hash_object_parser = subparsers.add_parser(
-            "hash-object", help="Hash the specified file"
-        )
-        hash_object_parser.add_argument("file", help="The file to hash")
-        hash_object_parser.set_defaults(func=self.hash_object)
-
-        # ls-tree command
-        ls_tree_parser = subparsers.add_parser(
-            "ls-tree", help="List the contents of a tree object"
-        )
-        ls_tree_parser.add_argument(
-            "--name-only",
-            action="store_true",
-            help="Print only the names of the tree contents",
-        )
-        ls_tree_parser.add_argument("hash", help="The hash in the git objects")
-        ls_tree_parser.set_defaults(func=self.ls_tree)
-
-        # write-tree command
-        write_tree_parser = subparsers.add_parser(
-            "write-tree",
-            help="Creates a tree object from the current state of the staging area",
-        )
-        write_tree_parser.set_defaults(func=self.write_tree)
 
     def mkdir_if_not_exists(self, path):
         if not os.path.exists(path):
@@ -86,54 +55,41 @@ class Cli:
         print("Initialized sbam directory")
 
     def cat_file(self, args):
-        hash = args.hash
-        dir = hash[:2]
-        file = hash[2:]
+        sha1 = args.hash
+        target_file = os.path.join(self.OBJECTS_DIR, sha1[:2], sha1[2:])
 
-        with open(os.path.join(self.OBJECTS_DIR, dir, file), "rb") as file:
-            decomp = zlib.decompress(file.read())
+        data = utils.read_file(target_file)
+        decomp = zlib.decompress(data)
 
         start = decomp.find(b"\x00")
         parsed = decomp[start + 1 :].strip(b"\n").decode("utf-8")
         print(parsed)
 
-    # def hash_object(self, data, obj_type, write=True):
-    def hash_object(self, args, obj_type = "blob"):
+    def hash_object(self, data, obj_type="blob", write=True):
         """
         Compute hash of object data of given type and write to object store
         if "write" is True. Return SHA-1 object hash as hex string.
         """
 
-        ### SHOULD EXTRACT THIS PART - IT'S NOT RELATED TO HASHING DATA
-        fName = args.file
-
-        with open(fName, "rb") as file:
-            bytes = file.read()
-        ### --------------------------------------------------------END
-
-        header = "{} {}".format(obj_type, len(bytes)).encode()
-        full_data = header + b"\x00" + bytes
+        header = "{} {}".format(obj_type, len(data)).encode()
+        full_data = header + b"\x00" + data
         sha1 = hashlib.sha1(full_data).hexdigest()
 
-        if self.sbam_already_initialized():
-            sha_sub_folder = sha1[:2]
-            sha_temp_file = sha1[2:]
+        if write:
+            path = os.path.join(self.MAIN_DIR, self.OBJECTS_DIR, sha1[:2], sha1[2:])
 
-            new_dir = os.path.join(os.getcwd(), self.OBJECTS_DIR, sha_sub_folder)
-            self.mkdir_if_not_exists(new_dir)
+            if not os.path.exists(path):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                utils.write_file(path, zlib.compress(full_data))
 
-            with open(os.path.join(new_dir, sha_temp_file), "wb") as file:
-                file.write(zlib.compress(full_data))
-
-        print(sha1) ### SHOULD NOT PRINT TO CONSOLE INSIDE THIS FN
+        return sha1
 
     def ls_tree(self, args):
-        hash = args.hash
-        dir = hash[:2]
-        file = hash[2:]
+        sha1 = args.hash
+        target_file = os.path.join(self.OBJECTS_DIR, sha1[:2], sha1[2:])
 
-        with open(os.path.join(self.OBJECTS_DIR, dir, file), "rb") as file:
-            decomp = zlib.decompress(file.read())
+        data = utils.read_file(target_file)
+        decomp = zlib.decompress(data)
 
         start = decomp.find(b"\x00")
         parsed = decomp[start + 1 :]
@@ -144,11 +100,106 @@ class Cli:
     def write_tree(self, args):
         print("To implement")
 
-    def run(self):
-        args = self.parser.parse_args()
-        args.func(args)
+    def read_index(self):
+        """Read git index file and return list of IndexEntry objects."""
+
+        try:
+            data = utils.read_file(os.path.join(self.MAIN_DIR, "index"))
+        except FileNotFoundError:
+            return []
+
+        digest = hashlib.sha1(data[:-20]).digest()
+        assert digest == data[-20:], "invalid index checksum"
+
+        signature, version, num_entries = struct.unpack("!4sLL", data[:12])
+        assert signature == b"DIRC", "invalid index signature {}".format(signature)
+        assert version == 2, "unknown index version {}".format(version)
+
+        entry_data = data[12:-20]
+        entries = []
+
+        i = 0
+        while i + 62 < len(entry_data):
+            fields_end = i + 62
+            fields = struct.unpack("!LLLLLLLLLL20sH", entry_data[i:fields_end])
+
+            path_end = entry_data.index(b"\x00", fields_end)
+            path = entry_data[fields_end:path_end]
+
+            entry = IndexEntry(*(fields + (path.decode(),)))
+            entries.append(entry)
+            entry_len = ((62 + len(path) + 8) // 8) * 8
+
+            i += entry_len
+        assert len(entries) == num_entries
+
+        return entries
+
+    def get_status(self):
+        """
+        Get status of working copy, return tuple of (changed_paths, new_paths, deleted_paths).
+        """
+        paths = set()
+
+        for root, dirs, files in os.walk("."):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            for file in files:
+                path = os.path.join(root, file)
+                path = path.replace("\\", "/")
+                if path.startswith("./"):
+                    path = path[2:]
+                paths.add(path)
+        entries_by_path = {e.path: e for e in self.read_index()}
+        entry_paths = set(entries_by_path)
+        changed = {
+            p
+            for p in (paths & entry_paths)
+            if self.hash_object(utils.read_file(p), "blob", write=False)
+            != entries_by_path[p].sha1.hex()
+        }
+        new = paths - entry_paths
+        deleted = entry_paths - paths
+        return (sorted(changed), sorted(new), sorted(deleted))
+
+    def status(self):
+        """Show status of working copy."""
+        changed, new, deleted = self.get_status()
+        if changed:
+            print("changed files:")
+            for path in changed:
+                print("   ", path)
+        if new:
+            print("new files:")
+            for path in new:
+                print("   ", path)
+        if deleted:
+            print("deleted files:")
+            for path in deleted:
+                print("   ", path)
+
+    def run(self, args):
+        match args.command:
+            case "init":
+                self.init(args)
+            case "cat-file":
+                self.cat_file(args)
+            case "hash-object":
+                data = utils.read_file(args.file)
+                sha1 = self.hash_object(data, args.type, write=args.write)
+                print(sha1)
+            case "ls-tree":
+                self.ls_tree(args)
+            case "write-tree":
+                self.write_tree(args)
+            case "status":
+                self.status()
+            case _:
+                print("LOL")
 
 
 def main() -> None:
-    cli = Cli()
-    cli.run()
+    clid = cli.Cli()
+    args = clid.parser.parse_args()
+
+    sbam = Service()
+    sbam.run(args)
