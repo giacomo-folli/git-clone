@@ -5,7 +5,7 @@ import zlib
 
 
 class Cli:
-    main_dir = ".git"
+    main_dir = ".sbam"
     objects_dir = os.path.join(main_dir, "objects")
     refs_dir = os.path.join(main_dir, "refs")
     head_file = os.path.join(main_dir, "HEAD")
@@ -136,6 +136,6 @@ class Cli:
         args.func(args)
 
 
-if __name__ == "__main__":
+def main() -> None:
     cli = Cli()
     cli.run()
