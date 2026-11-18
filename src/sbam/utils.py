@@ -36,4 +36,7 @@ def expand_paths(path: str | os.PathLike) -> list[str]:
 
 
 def normalize_path(path: str) -> str:
-    return path.replace("\\", "/").rstrip("/")
+    path = path.replace("\\", "/").rstrip("/")
+    if path.startswith("./"):
+        path = path[2:]
+    return path
