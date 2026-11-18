@@ -66,6 +66,25 @@ class Service:
 
         return [p for p in paths if p]
 
+    def is_ignored(self, path: str, ignored_paths: list[str]) -> bool:
+        """Check if a path matches ignored patterns or repository internal dir."""
+        norm_path = utils.normalize_path(path)
+        if not norm_path:
+            return False
+        parts = norm_path.split("/")
+        if self._MAIN_DIR in parts:
+            return True
+        for ignored in ignored_paths:
+            if not ignored:
+                continue
+            if ignored == norm_path:
+                return True
+            if ignored in parts:
+                return True
+            if norm_path.startswith(ignored + "/"):
+                return True
+        return False
+
     def init(self):
         """Initialize the sbam repository layout in the current directory.
 
@@ -229,24 +248,32 @@ class Service:
 
     def get_status(self):
         """Get status of working copy, return tuple of (changed_paths, new_paths, deleted_paths)."""
-        paths = set()
+        entries_by_path = {e.path: e for e in self.read_index()}
+        entry_paths = set(entries_by_path)
 
+        paths = set()
         ignored_paths = self.get_ignored_paths()
+        normalized_ignored_paths = list(map(utils.normalize_path, ignored_paths))
 
         for root, dirs, files in os.walk("."):
             dirs[:] = [
-                d for d in dirs if d != self._MAIN_DIR and d not in ignored_paths
+                d
+                for d in dirs
+                if d != self._MAIN_DIR
+                and not (
+                    self.is_ignored(os.path.join(root, d), normalized_ignored_paths)
+                    and not any(
+                        p.startswith(utils.normalize_path(os.path.join(root, d)) + "/")
+                        for p in entry_paths
+                    )
+                )
             ]
-            files = [f for f in files if f not in ignored_paths]
 
             for file in files:
-                path = os.path.join(root, file)
-                path = path.replace("\\", "/")
-                if path.startswith("./"):
-                    path = path[2:]
-                paths.add(path)
-        entries_by_path = {e.path: e for e in self.read_index()}
-        entry_paths = set(entries_by_path)
+                path = utils.normalize_path(os.path.join(root, file))
+                if path in entry_paths or not self.is_ignored(path, normalized_ignored_paths):
+                    paths.add(path)
+
         changed = {
             p
             for p in (paths & entry_paths)
@@ -350,11 +377,7 @@ class Service:
         paths = [
             path
             for path in paths
-            if self._MAIN_DIR not in path.split("/")
-            and not any(
-                ignored in path.split("/") or ignored == path
-                for ignored in normalized_ignored_paths
-            )
+            if not self.is_ignored(path, normalized_ignored_paths)
         ]
 
         all_entries = self.read_index()
