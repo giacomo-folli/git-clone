@@ -19,10 +19,10 @@ class Service:
         cat_file_parser.add_argument("hash", help="The hash of the file to print")
 
         # INIT--------------------------------------------------------------------
-        sub_parser = subparsers.add_parser(
-            "init", help="Initialize a new sbam repository"
+        add_parser = subparsers.add_parser(
+            "init", help="Initialize a new sbam repository in the current directory"
         )
-        sub_parser.add_argument("repo", help="directory name for new repo")
+        # sub_parser.add_argument("repo", help="directory name for new repo")
 
         # HASH-OBJECT-------------------------------------------------------------
         hash_object_parser = subparsers.add_parser(
@@ -85,4 +85,10 @@ class Service:
         # CHECK-IGNORE-FILE----------------------------------------------------------
         commit_parser = subparsers.add_parser(
             "check-ignore-file", help="print the files ignored in the .sbamignore file"
+        )
+
+        # ADD------------------------------------------------------------------------
+        add_parser = subparsers.add_parser("add", help="add file(s) to index")
+        add_parser.add_argument(
+            "paths", nargs="+", metavar="path", help="path(s) of files to add"
         )
