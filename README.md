@@ -11,18 +11,27 @@ The goal was not to reproduce Git in full, but to build a simplified system from
 ## Key capabilities
 
 - `init`: initialize a repository
-- `hash-object`: hash a file and persist it as a repository object
-- `cat-file`: read a stored object from the object database
-- `ls-tree`: inspect a tree object
-- `write-tree`: prepare the code path for writing tree objects from the current repository state
+- `hash-object`: hash file contents and optionally persist the object
+- `cat-file`: read and print a stored object
+- `ls-tree`: list the contents of a tree object
+- `write-tree`: write tree objects from the staging area
+- `add`: add one or more files to the staging area
+- `status`: show changed, new, and deleted files
+- `commit`: commit the staged state to the `master` branch
+- `check-ignore-file`: list paths excluded by `.sbamignore`
 
 ## Example usage
 
 ```bash
-git-clone init
-git-clone hash-object README.md
-git-clone cat-file <object-hash>
-git-clone ls-tree <tree-hash>
+sbam init
+sbam add <path>
+sbam status
+sbam commit -m "<commit message>"
+sbam hash-object -w <file to hash>
+sbam cat-file <object-hash>
+sbam ls-tree --name-only <tree-hash>
+sbam write-tree
+sbam check-ignore-file
 ```
 
 ## Architecture
