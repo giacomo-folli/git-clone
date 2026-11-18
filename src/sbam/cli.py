@@ -1,7 +1,7 @@
 import argparse
 
 
-class Cli:
+class Service:
     def __init__(self):
         """Configure the command-line interface for sbam."""
 
@@ -64,4 +64,25 @@ class Cli:
             help="Creates a tree object from the current state of the staging area",
         )
 
+        # STATUS-------------------------------------------------------------------
         subparsers.add_parser("status", help="Show status of working copy")
+
+        # COMMIT-------------------------------------------------------------------
+        commit_parser = subparsers.add_parser(
+            "commit", help="commit current state of index to master branch"
+        )
+        commit_parser.add_argument(
+            "-a",
+            "--author",
+            help='commit author in format "A U Thor <author@example.com>" '
+            "(uses GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL environment "
+            "variables by default)",
+        )
+        commit_parser.add_argument(
+            "-m", "--message", required=True, help="text of commit message"
+        )
+
+        # CHECK-IGNORE-FILE----------------------------------------------------------
+        commit_parser = subparsers.add_parser(
+            "check-ignore-file", help="print the files ignored in the .sbamignore file"
+        )

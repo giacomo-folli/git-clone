@@ -2,13 +2,6 @@ from os import PathLike, path, mkdir
 from enum import Enum
 
 
-class Paths(Enum):
-    MAIN_DIR = ".sbam"
-    OBJECTS_DIR = path.join(MAIN_DIR, "objects")
-    REFS_DIR = path.join(MAIN_DIR, "refs")
-    HEAD_FILE = path.join(MAIN_DIR, "HEAD")
-
-
 def read_file(path: str | PathLike) -> bytes:
     """Read contents of file at given path as bytes."""
 
