@@ -1,6 +1,5 @@
 .git
 .gitignore
-.sbam
 .venv
 __pycache__
 ./src/sbam/__init__.py

@@ -272,6 +272,8 @@ class Service:
             print("deleted files:")
             for path in deleted:
                 print("   ", path)
+        if not changed and not new and not deleted:
+            print("nothing to commit, working tree clean")
 
     def commit(self, message, author):
         """Commit the current state of the index to master with given message.
@@ -348,7 +350,8 @@ class Service:
         paths = [
             path
             for path in paths
-            if not any(
+            if self._MAIN_DIR not in path.split("/")
+            and not any(
                 ignored in path.split("/") or ignored == path
                 for ignored in normalized_ignored_paths
             )
